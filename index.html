@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="am">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Fidel Quest - Play</title>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <style>
+        :root { --gold: #d4af37; --crimson: #8b0000; --cream: #fdf5e6; }
+        body { font-family: sans-serif; text-align: center; background: var(--cream); margin: 0; padding: 20px; }
+        .card { background: white; padding: 25px; border-radius: 20px; border: 3px solid var(--crimson); box-shadow: 0 4px 10px rgba(0,0,0,0.1); }
+        input { padding: 15px; width: 100%; max-width: 280px; margin-bottom: 15px; font-size: 1.2rem; border-radius: 10px; border: 2px solid #ccc; }
+        button { padding: 18px; background: var(--crimson); color: white; border: none; border-radius: 12px; width: 100%; max-width: 280px; font-size: 1.3rem; font-weight: bold; cursor: pointer; margin: 10px 0; }
+        .game-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-top: 20px; }
+        .choice-btn { height: 100px; font-size: 1.5rem; }
+    </style>
+</head>
+<body>
+    <div id="app" class="card">
+        <h1>Fidel Quest ☦️</h1>
+        <div id="join-ui">
+            <input type="number" id="pInput" placeholder="4-Digit PIN">
+            <input type="text" id="nInput" placeholder="Your Nickname">
+            <button onclick="join()">JOIN GAME</button>
+        </div>
+        <div id="game-ui" style="display:none;">
+            <h2 id="status-msg">Waiting for Priest...</h2>
+            <div id="choices" class="game-grid"></div>
+        </div>
+    </div>
+
+    <script>
+        const SB_URL = 'https://hmepqrpancugksibgysk.supabase.co';
+        const SB_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhtZXBxcnBhbmN1Z2tzaWJneXNrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzcxNjk0NzQsImV4cCI6MjA5Mjc0NTQ3NH0.EMfjuGtTpK_hvGYHouKBunGFitomG_T0buhYmJz7QIU';
+        const supabase = supabase.createClient(SB_URL, SB_KEY);
+
+        let myPlayerId = null;
+
+        async function join() {
+            const pin = document.getElementById('pInput').value;
+            const nickname = document.getElementById('nInput').value;
+
+            const { data: session } = await supabase.from('game_sessions')
+                .select('id').eq('game_pin', pin).eq('status', 'lobby').single();
+
+            if (session) {
+                const { data: player } = await supabase.from('players')
+                    .insert([{ session_id: session.id, nickname: nickname }]).select().single();
+                
+                myPlayerId = player.id;
+                document.getElementById('join-ui').style.display = 'none';
+                document.getElementById('game-ui').style.display = 'block';
+                listenForGame(session.id);
+            } else {
+                alert("Game not found!");
+            }
+        }
+
+        function listenForGame(sid) {
+            supabase.channel('game-flow')
+            .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'game_sessions', filter: `id=eq.${sid}` }, async (payload) => {
+                if (payload.new.status === 'playing') {
+                    showChoices(payload.new.current_question_id);
+                }
+            }).subscribe();
+        }
+
+        async function showChoices(correctId) {
+            document.getElementById('status-msg').innerText = "Select the match!";
+            const { data: choices } = await supabase.from('content_library').select('*').limit(4);
+            
+            const grid = document.getElementById('choices');
+            grid.innerHTML = '';
+            
+            choices.forEach(c => {
+                const btn = document.createElement('button');
+                btn.className = 'choice-btn';
+                btn.innerText = c.match_word;
+                btn.onclick = () => submitAnswer(c.id === correctId);
+                grid.appendChild(btn);
+            });
+        }
+
+        function submitAnswer(isCorrect) {
+            if(isCorrect) {
+                alert("Correct! ተባረኩ!");
+                // Here you can add score update logic!
+            } else {
+                alert("Incorrect! Try the next one.");
+            }
+            document.getElementById('choices').innerHTML = '<h3>Answer Submitted! Wait for next...</h3>';
+        }
+    </script>
+</body>
+</html>

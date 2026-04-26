@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="am">
+<head>
+    <meta charset="UTF-8">
+    <title>Fidel Quest - Host</title>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <style>
+        :root { --gold: #d4af37; --crimson: #8b0000; }
+        body { font-family: 'Segoe UI', sans-serif; text-align: center; background: var(--crimson); color: white; margin: 0; padding: 20px; }
+        .pin-card { background: white; color: var(--crimson); padding: 30px; display: inline-block; border-radius: 25px; margin: 30px; }
+        #pin { font-size: 7rem; font-weight: bold; margin: 0; }
+        #player-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 15px; margin-top: 30px; }
+        .player { background: rgba(255,255,255,0.2); padding: 15px; border-radius: 12px; font-size: 1.4rem; border: 1px solid rgba(255,255,255,0.1); }
+        button { background: var(--gold); color: var(--crimson); border: none; padding: 20px 50px; font-size: 2rem; border-radius: 50px; cursor: pointer; font-weight: bold; margin-top: 50px; }
+    </style>
+</head>
+<body>
+    <h1 style="color: var(--gold); font-size: 3rem;">FIDEL QUEST ☦️</h1>
+    <div class="pin-card"><p id="pin">----</p></div>
+    
+    <div id="lobby">
+        <h2>Warriors in Lobby:</h2>
+        <div id="player-grid"></div>
+        <button onclick="startGame()">START QUEST</button>
+    </div>
+
+    <script>
+        const SB_URL = 'https://hmepqrpancugksibgysk.supabase.co';
+        const SB_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhtZXBxcnBhbmN1Z2tzaWJneXNrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzcxNjk0NzQsImV4cCI6MjA5Mjc0NTQ3NH0.EMfjuGtTpK_hvGYHouKBunGFitomG_T0buhYmJz7QIU';
+        
+        // Safety check to ensure Supabase loaded
+        if (typeof supabase === 'undefined') {
+            alert("Supabase script failed to load. Check your internet connection.");
+        }
+
+        const client = supabase.createClient(SB_URL, SB_KEY);
+        let sessionId = null;
+
+        async function initHost() {
+            const newPin = Math.floor(1000 + Math.random() * 9000);
+            console.log("Generating PIN:", newPin);
+
+            // Using your exact column: current_question_id
+            const { data, error } = await client.from('game_sessions')
+                .insert([{ 
+                    game_pin: newPin, 
+                    status: 'lobby', 
+                    current_question_id: 0 
+                }])
+                .select()
+                .single();
+            
+            if (error) {
+                console.error("Supabase Error:", error.message);
+                document.getElementById('pin').innerText = "ERR";
+                alert("Database Error: " + error.message);
+                return;
+            }
+
+            sessionId = data.id;
+            document.getElementById('pin').innerText = newPin;
+            console.log("Session successfully created with ID:", sessionId);
+
+            // Listen for players
+            client.channel('players-join')
+            .on('postgres_changes', { 
+                event: 'INSERT', 
+                schema: 'public', 
+                table: 'players', 
+                filter: `session_id=eq.${sessionId}` 
+            }, payload => {
+                const grid = document.getElementById('player-grid');
+                const div = document.createElement('div');
+                div.className = 'player';
+                div.innerText = payload.new.nickname;
+                grid.appendChild(div);
+            }).subscribe();
+        }
+
+        async function startGame() {
+            if(!sessionId) return;
+            const { error } = await client.from('game_sessions')
+                .update({ status: 'playing', current_question_id: 1 })
+                .eq('id', sessionId);
+            
+            if (error) alert("Start Error: " + error.message);
+            else document.getElementById('lobby').innerHTML = "<h1>QUEST ACTIVE!</h1>";
+        }
+
+        initHost();
+    </script>
+</body>
+</html>
