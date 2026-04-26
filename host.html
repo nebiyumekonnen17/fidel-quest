@@ -6,85 +6,78 @@
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <style>
         :root { --gold: #d4af37; --crimson: #8b0000; }
-        body { font-family: 'Segoe UI', sans-serif; text-align: center; background: var(--crimson); color: white; margin: 0; padding: 20px; }
-        .pin-card { background: white; color: var(--crimson); padding: 30px; display: inline-block; border-radius: 25px; margin: 30px; }
-        #pin { font-size: 7rem; font-weight: bold; margin: 0; }
-        #player-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 15px; margin-top: 30px; }
-        .player { background: rgba(255,255,255,0.2); padding: 15px; border-radius: 12px; font-size: 1.4rem; border: 1px solid rgba(255,255,255,0.1); }
-        button { background: var(--gold); color: var(--crimson); border: none; padding: 20px 50px; font-size: 2rem; border-radius: 50px; cursor: pointer; font-weight: bold; margin-top: 50px; }
+        body { font-family: 'Segoe UI', sans-serif; text-align: center; background: var(--crimson); color: white; margin: 0; padding: 20px; overflow-x: hidden; }
+        .pin-card { background: white; color: var(--crimson); padding: 20px 40px; display: inline-block; border-radius: 25px; margin: 20px; box-shadow: 0 10px 30px rgba(0,0,0,0.5); }
+        #pin { font-size: 6rem; font-weight: bold; margin: 0; }
+        #player-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 15px; max-width: 900px; margin: 20px auto; }
+        .player { background: rgba(255,255,255,0.2); padding: 15px; border-radius: 12px; font-size: 1.4rem; border: 1px solid rgba(255,255,255,0.1); animation: pop 0.3s ease-out; }
+        .fidel-display { background: white; color: var(--crimson); padding: 50px; border-radius: 40px; display: inline-block; margin-top: 40px; box-shadow: 0 0 50px var(--gold); }
+        #fidel-char { font-size: 15rem; margin: 0; }
+        button { background: var(--gold); color: var(--crimson); border: none; padding: 20px 50px; font-size: 2rem; border-radius: 50px; cursor: pointer; font-weight: bold; transition: 0.2s; }
+        @keyframes pop { 0% { transform: scale(0.5); } 100% { transform: scale(1); } }
     </style>
 </head>
 <body>
-    <h1 style="color: var(--gold); font-size: 3rem;">FIDEL QUEST ☦️</h1>
-    <div class="pin-card"><p id="pin">----</p></div>
+    <h1 style="color: var(--gold); font-size: 3rem; margin-bottom: 0;">FIDEL QUEST ☦️</h1>
     
-    <div id="lobby">
-        <h2>Warriors in Lobby:</h2>
+    <div id="setup-view">
+        <div class="pin-card"><p id="pin">----</p></div>
+        <h2>Warriors Ready:</h2>
         <div id="player-grid"></div>
         <button onclick="startGame()">START QUEST</button>
+    </div>
+
+    <div id="game-view" style="display:none;">
+        <div class="fidel-display">
+            <h1 id="fidel-char">ሀ</h1>
+        </div>
+        <h2 style="font-size: 2.5rem; color: var(--gold); margin-top: 30px;">Match the sound!</h2>
+        <br>
+        <button onclick="nextQuestion()" style="font-size: 1.5rem; padding: 15px 30px;">NEXT FIDEL ➔</button>
     </div>
 
     <script>
         const SB_URL = 'https://hmepqrpancugksibgysk.supabase.co';
         const SB_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhtZXBxcnBhbmN1Z2tzaWJneXNrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzcxNjk0NzQsImV4cCI6MjA5Mjc0NTQ3NH0.EMfjuGtTpK_hvGYHouKBunGFitomG_T0buhYmJz7QIU';
+        const sb = supabase.createClient(SB_URL, SB_KEY);
         
-        // Safety check to ensure Supabase loaded
-        if (typeof supabase === 'undefined') {
-            alert("Supabase script failed to load. Check your internet connection.");
-        }
-
-        const client = supabase.createClient(SB_URL, SB_KEY);
         let sessionId = null;
 
         async function initHost() {
             const newPin = Math.floor(1000 + Math.random() * 9000);
-            console.log("Generating PIN:", newPin);
-
-            // Using your exact column: current_question_id
-            const { data, error } = await client.from('game_sessions')
-                .insert([{ 
-                    game_pin: newPin, 
-                    status: 'lobby', 
-                    current_question_id: 0 
-                }])
-                .select()
-                .single();
-            
-            if (error) {
-                console.error("Supabase Error:", error.message);
-                document.getElementById('pin').innerText = "ERR";
-                alert("Database Error: " + error.message);
-                return;
+            const { data, error } = await sb.from('game_sessions').insert([{ game_pin: newPin, status: 'lobby', current_question_id: 0 }]).select().single();
+            if (data) {
+                sessionId = data.id;
+                document.getElementById('pin').innerText = newPin;
+                listenForPlayers();
             }
+        }
 
-            sessionId = data.id;
-            document.getElementById('pin').innerText = newPin;
-            console.log("Session successfully created with ID:", sessionId);
-
-            // Listen for players
-            client.channel('players-join')
-            .on('postgres_changes', { 
-                event: 'INSERT', 
-                schema: 'public', 
-                table: 'players', 
-                filter: `session_id=eq.${sessionId}` 
-            }, payload => {
-                const grid = document.getElementById('player-grid');
+        function listenForPlayers() {
+            sb.channel('lobby').on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'players', filter: `session_id=eq.${sessionId}` }, payload => {
                 const div = document.createElement('div');
                 div.className = 'player';
                 div.innerText = payload.new.nickname;
-                grid.appendChild(div);
+                document.getElementById('player-grid').appendChild(div);
             }).subscribe();
         }
 
         async function startGame() {
-            if(!sessionId) return;
-            const { error } = await client.from('game_sessions')
-                .update({ status: 'playing', current_question_id: 1 })
-                .eq('id', sessionId);
+            document.getElementById('setup-view').style.display = 'none';
+            document.getElementById('game-view').style.display = 'block';
+            await nextQuestion();
+        }
+
+        async function nextQuestion() {
+            const { data: questions } = await sb.from('content_library').select('*');
+            const randomQ = questions[Math.floor(Math.random() * questions.length)];
             
-            if (error) alert("Start Error: " + error.message);
-            else document.getElementById('lobby').innerHTML = "<h1>QUEST ACTIVE!</h1>";
+            document.getElementById('fidel-char').innerText = randomQ.fidel;
+            
+            await sb.from('game_sessions').update({ 
+                status: 'playing', 
+                current_question_id: randomQ.id 
+            }).eq('id', sessionId);
         }
 
         initHost();
