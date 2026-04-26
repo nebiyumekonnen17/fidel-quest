@@ -6,149 +6,66 @@
     <title>Fidel Quest - Play</title>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <style>
-        :root { --gold: #d4af37; --crimson: #8b0000; --cream: #fdf5e6; }
-        body { 
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
-            text-align: center; 
-            background: var(--cream); 
-            margin: 0; 
-            padding: 20px; 
-            display: flex; 
-            flex-direction: column; 
-            align-items: center; 
-            justify-content: center; 
-            min-height: 100vh;
-        }
-        .card { 
-            background: white; 
-            padding: 30px; 
-            border-radius: 20px; 
-            border: 4px solid var(--crimson); 
-            box-shadow: 0 8px 20px rgba(0,0,0,0.15); 
-            width: 100%; 
-            max-width: 350px;
-        }
-        h1 { color: var(--crimson); margin-top: 0; }
-        input { 
-            padding: 15px; 
-            width: 100%; 
-            margin-bottom: 15px; 
-            font-size: 1.2rem; 
-            border-radius: 10px; 
-            border: 2px solid #ccc; 
-            box-sizing: border-box;
-        }
-        button { 
-            padding: 18px; 
-            background: var(--crimson); 
-            color: white; 
-            border: none; 
-            border-radius: 12px; 
-            width: 100%; 
-            font-size: 1.3rem; 
-            font-weight: bold; 
-            cursor: pointer; 
-            transition: transform 0.1s;
-        }
-        button:active { transform: scale(0.98); }
-        #waiting { display: none; color: var(--crimson); }
-        .status-dot {
-            height: 10px;
-            width: 10px;
-            background-color: #4CAF50;
-            border-radius: 50%;
-            display: inline-block;
-            margin-right: 5px;
-        }
+        :root { --crimson: #8b0000; --cream: #fdf5e6; }
+        body { font-family: sans-serif; text-align: center; background: var(--cream); margin: 0; padding: 20px; }
+        .card { background: white; padding: 25px; border-radius: 20px; border: 4px solid var(--crimson); max-width: 400px; margin: auto; }
+        input { padding: 15px; width: 100%; margin-bottom: 15px; font-size: 1.2rem; border-radius: 10px; border: 2px solid #ccc; box-sizing: border-box; }
+        button { padding: 18px; background: var(--crimson); color: white; border: none; border-radius: 12px; width: 100%; font-size: 1.2rem; font-weight: bold; cursor: pointer; }
+        .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 20px; }
+        .choice-btn { background: #eee; color: var(--crimson); border: 2px solid var(--crimson); height: 80px; font-size: 1.5rem; }
+        .choice-btn:active { background: var(--crimson); color: white; }
     </style>
 </head>
 <body>
-
     <div id="app" class="card">
-        <h1>Fidel Quest ☦️</h1>
-        
+        <h1 style="color:var(--crimson)">Fidel Quest ☦️</h1>
         <div id="join-ui">
-            <p>Enter the PIN from the TV</p>
-            <input type="number" id="pInput" placeholder="4-Digit PIN" inputmode="numeric">
+            <input type="number" id="pInput" placeholder="PIN" inputmode="numeric">
             <input type="text" id="nInput" placeholder="Your Nickname">
-            <button onclick="join()">JOIN GAME</button>
+            <button onclick="join()">JOIN</button>
         </div>
-
-        <div id="waiting">
-            <h2 style="margin-bottom: 5px;">You're In! 🎉</h2>
-            <p><span class="status-dot"></span> Connected to Lobby</p>
-            <p style="font-style: italic;">Wait for the Priest to start the Quest...</p>
+        <div id="game-ui" style="display:none;">
+            <h3 id="msg">Wait for Question...</h3>
+            <div id="choices" class="grid"></div>
         </div>
     </div>
 
     <script>
-        // Use your specific project credentials
         const SB_URL = 'https://hmepqrpancugksibgysk.supabase.co';
         const SB_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhtZXBxcnBhbmN1Z2tzaWJneXNrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzcxNjk0NzQsImV4cCI6MjA5Mjc0NTQ3NH0.EMfjuGtTpK_hvGYHouKBunGFitomG_T0buhYmJz7QIU';
-        
-        // Use 'sb' to avoid the "supabase already declared" SyntaxError
         const sb = supabase.createClient(SB_URL, SB_KEY);
 
         async function join() {
-            console.log("Join function triggered");
             const pin = document.getElementById('pInput').value;
-            const nickname = document.getElementById('nInput').value;
-
-            if (!pin || !nickname) {
-                alert("Please enter both the PIN and your name!");
-                return;
-            }
-
-            try {
-                // 1. Find the active session using the PIN
-                const { data: session, error: sError } = await sb.from('game_sessions')
-                    .select('id')
-                    .eq('game_pin', pin)
-                    .eq('status', 'lobby')
-                    .single();
-
-                if (sError || !session) {
-                    alert("Game not found! Check the PIN on the TV.");
-                    return;
-                }
-
-                // 2. Insert player into the 'players' table using the session_id foreign key
-                const { error: pError } = await sb.from('players')
-                    .insert([{ 
-                        session_id: session.id, 
-                        nickname: nickname 
-                    }]);
+            const nick = document.getElementById('nInput').value;
+            const { data: session } = await sb.from('game_sessions').select('id').eq('game_pin', pin).eq('status', 'lobby').single();
+            
+            if (session) {
+                await sb.from('players').insert([{ session_id: session.id, nickname: nick }]);
+                document.getElementById('join-ui').style.display = 'none';
+                document.getElementById('game-ui').style.display = 'block';
                 
-                if (pError) {
-                    console.error("Database Error:", pError.message);
-                    alert("Error joining: " + pError.message);
-                } else {
-                    // Success: Switch UI
-                    document.getElementById('join-ui').style.display = 'none';
-                    document.getElementById('waiting').style.display = 'block';
-                    
-                    // Listen for the Host to change status to 'playing'
-                    listenForStart(session.id);
-                }
-            } catch (err) {
-                console.error("Unexpected Error:", err);
-                alert("Something went wrong. Check your connection.");
+                sb.channel('updates').on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'game_sessions', filter: `id=eq.${session.id}` }, payload => {
+                    if (payload.new.status === 'playing') renderButtons(payload.new.current_question_id);
+                }).subscribe();
             }
         }
 
-        function listenForStart(sid) {
-            sb.channel('game-updates')
-            .on('postgres_changes', { 
-                event: 'UPDATE', 
-                schema: 'public', 
-                table: 'game_sessions', 
-                filter: `id=eq.${sid}` 
-            }, payload => {
-                if (payload.new.status === 'playing') {
-                    alert("The Quest has begun! Look at the Big Screen!");
-                    // Transition to gameplay logic can go here
-                }
-            }).subscribe();
+        async function renderButtons(correctId) {
+            document.getElementById('msg').innerText = "Pick the match!";
+            const { data: choices } = await sb.from('content_library').select('*').limit(4);
+            const grid = document.getElementById('choices');
+            grid.innerHTML = '';
+            choices.forEach(c => {
+                const b = document.createElement('button');
+                b.className = 'choice-btn';
+                b.innerText = c.match_word;
+                b.onclick = () => {
+                    grid.innerHTML = c.id === correctId ? "<h1>✅ YES!</h1>" : "<h1>❌ NO</h1>";
+                    setTimeout(() => { document.getElementById('msg').innerText = "Waiting for next..."; grid.innerHTML=''; }, 2000);
+                };
+                grid.appendChild(b);
+            });
         }
     </script>
 </body>
